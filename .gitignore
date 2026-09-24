@@ -1,0 +1,13 @@
+# Runtime data
+logs/
+reports/
+state/
+
+# Temporary files
+*.tmp
+*.swp
+
+# Local/editor files
+.DS_Store
+.idea/
+.vscode/
