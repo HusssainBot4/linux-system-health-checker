@@ -48,12 +48,14 @@ ge() {
     awk -v a="$1" -v b="$2" 'BEGIN { exit !(a >= b) }'
 }
 
-# Terminal colours
-C_RESET='\033[0m'
-C_OK='\033[0;32m'
-C_WARN='\033[0;33m'
-C_CRIT='\033[0;31m'
-C_HEAD='\033[1;34m'
+# Terminal color
+C_RESET=$'\033[0m'
+C_OK=$'\033[0;32m'
+C_WARN=$'\033[0;33m'
+C_CRIT=$'\033[0;31m'
+C_HEAD=$'\033[1;34m'
+
+
 
 # Disable colour when output is not a terminal
 # (cron, pipes, redirected files, etc.)
@@ -123,11 +125,15 @@ bar() {
 }
 
 check_cpu() {
-    local a b idle_a idle_b total_a total_b usage sev
+    local a b
+    local -a f1 f2
+    local idle_a idle_b total_a total_b
+    local d_total d_idle
+    local usage sev
 
     # First sample
     read -r _ a <<< "$(grep '^cpu ' /proc/stat)"
-    local f1=($a)
+    read -ra f1 <<< "$a"
 
     idle_a=$(( f1[3] + f1[4] ))
 
@@ -140,7 +146,7 @@ check_cpu() {
 
     # Second sample
     read -r _ b <<< "$(grep '^cpu ' /proc/stat)"
-    local f2=($b)
+    read -ra f2 <<< "$b"
 
     idle_b=$(( f2[3] + f2[4] ))
 
@@ -149,8 +155,9 @@ check_cpu() {
         total_b=$(( total_b + v ))
     done
 
-    local d_total=$(( total_b - total_a ))
-    local d_idle=$(( idle_b - idle_a ))
+    # Calculate the change between the two samples.
+    d_total=$(( total_b - total_a ))
+    d_idle=$(( idle_b - idle_a ))
 
     (( d_total == 0 )) && d_total=1
 
@@ -161,9 +168,11 @@ check_cpu() {
 
     sev=0
 
-    ge "$usage" "$CPU_CRIT" && sev=2 || {
-        ge "$usage" "$CPU_WARN" && sev=1
-    }
+    if ge "$usage" "$CPU_CRIT"; then
+        sev=2
+    elif ge "$usage" "$CPU_WARN"; then
+        sev=1
+    fi
 
     escalate "$sev"
 
@@ -175,7 +184,6 @@ check_cpu() {
 
     log INFO "cpu=${usage}% severity=${sev}"
 }
-
 
 # Load configuration if it exists.
 if [[ -f "$CONFIG" ]]; then
