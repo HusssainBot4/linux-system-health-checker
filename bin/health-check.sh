@@ -48,6 +48,80 @@ ge() {
     awk -v a="$1" -v b="$2" 'BEGIN { exit !(a >= b) }'
 }
 
+# Terminal colours
+C_RESET='\033[0m'
+C_OK='\033[0;32m'
+C_WARN='\033[0;33m'
+C_CRIT='\033[0;31m'
+C_HEAD='\033[1;34m'
+
+# Disable colour when output is not a terminal
+# (cron, pipes, redirected files, etc.)
+if [[ ! -t 1 ]]; then
+    C_RESET=''
+    C_OK=''
+    C_WARN=''
+    C_CRIT=''
+    C_HEAD=''
+fi
+
+section() {
+    printf '\n%s%s%s\n' "$C_HEAD" "$1" "$C_RESET"
+    printf '%s\n' '----------------------------------------------------------'
+}
+
+# status <severity 0|1|2> <label> <value> [detail]
+status() {
+    local sev="$1"
+    local label="$2"
+    local value="$3"
+    local detail="${4:-}"
+
+    local tag
+    local colour
+
+    case "$sev" in
+        0)
+            tag="OK"
+            colour="$C_OK"
+            ;;
+        1)
+            tag="WARNING"
+            colour="$C_WARN"
+            ;;
+        2)
+            tag="CRITICAL"
+            colour="$C_CRIT"
+            ;;
+    esac
+
+    printf ' %-22s %-14s %s[%s]%s %s\n' \
+        "$label" \
+        "$value" \
+        "$colour" \
+        "$tag" \
+        "$C_RESET" \
+        "$detail"
+}
+
+# bar <percentage> — a 20-character usage bar
+bar() {
+    local pct=${1%%.*}
+    local filled
+    local i
+    local out=""
+
+    (( pct > 100 )) && pct=100
+
+    filled=$(( pct / 5 ))
+
+    for (( i = 0; i < 20; i++ )); do
+        (( i < filled )) && out+="#" || out+="."
+    done
+
+    printf '[%s]' "$out"
+}
+
 # Load configuration if it exists.
 if [[ -f "$CONFIG" ]]; then
     # shellcheck source=/dev/null
@@ -76,21 +150,24 @@ LOAD_CRIT="${LOAD_CRIT:-2.5}"
 TOP_PROCESSES="${TOP_PROCESSES:-5}"
 
 main() {
-    printf '\n'
-    printf '%s\n' '================================================================'
+    printf '\n%s================================================================%s\n' \
+        "$C_HEAD" "$C_RESET"
+
     printf ' DEVOPS SAINI | SYSTEM HEALTH CHECKER\n'
     printf ' Host: %-24s Generated: %s\n' "$HOSTNAME_S" "$STAMP"
-    printf '%s\n' '================================================================'
+
+    printf '%s================================================================%s\n' \
+        "$C_HEAD" "$C_RESET"
+
+    section "RESOURCE UTILISATION"
+
+    status 0 "CPU utilisation" "23.4%" "$(bar "23.4")"
+    status 1 "Memory used" "81.2%" "$(bar "81.2")"
+    status 2 "Disk /" "94%" "$(bar "94")"
+
     printf '\n'
 
-    log INFO "health check started"
-
-    printf 'Configuration: %s\n' "$CONFIG"
-    printf 'Log file:     %s\n' "$LOG_FILE"
-    printf '\n'
-
-    log INFO "configuration loaded"
-    log INFO "health check skeleton completed"
+    log INFO "health check presentation helpers tested"
 
     exit "$OVERALL"
 }
