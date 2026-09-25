@@ -122,6 +122,61 @@ bar() {
     printf '[%s]' "$out"
 }
 
+check_cpu() {
+    local a b idle_a idle_b total_a total_b usage sev
+
+    # First sample
+    read -r _ a <<< "$(grep '^cpu ' /proc/stat)"
+    local f1=($a)
+
+    idle_a=$(( f1[3] + f1[4] ))
+
+    total_a=0
+    for v in "${f1[@]}"; do
+        total_a=$(( total_a + v ))
+    done
+
+    sleep 1
+
+    # Second sample
+    read -r _ b <<< "$(grep '^cpu ' /proc/stat)"
+    local f2=($b)
+
+    idle_b=$(( f2[3] + f2[4] ))
+
+    total_b=0
+    for v in "${f2[@]}"; do
+        total_b=$(( total_b + v ))
+    done
+
+    local d_total=$(( total_b - total_a ))
+    local d_idle=$(( idle_b - idle_a ))
+
+    (( d_total == 0 )) && d_total=1
+
+    usage=$(awk \
+        -v t="$d_total" \
+        -v i="$d_idle" \
+        'BEGIN { printf "%.1f", (t - i) * 100 / t }')
+
+    sev=0
+
+    ge "$usage" "$CPU_CRIT" && sev=2 || {
+        ge "$usage" "$CPU_WARN" && sev=1
+    }
+
+    escalate "$sev"
+
+    status \
+        "$sev" \
+        "CPU utilisation" \
+        "${usage}%" \
+        "$(bar "$usage")"
+
+    log INFO "cpu=${usage}% severity=${sev}"
+}
+
+
 # Load configuration if it exists.
 if [[ -f "$CONFIG" ]]; then
     # shellcheck source=/dev/null
@@ -161,13 +216,11 @@ main() {
 
     section "RESOURCE UTILISATION"
 
-    status 0 "CPU utilisation" "23.4%" "$(bar "23.4")"
-    status 1 "Memory used" "81.2%" "$(bar "81.2")"
-    status 2 "Disk /" "94%" "$(bar "94")"
+    check_cpu
 
     printf '\n'
 
-    log INFO "health check presentation helpers tested"
+    log INFO "health check CPU check completed"
 
     exit "$OVERALL"
 }
