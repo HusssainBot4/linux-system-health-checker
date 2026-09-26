@@ -368,6 +368,88 @@ check_load() {
         "load1=${one} load5=${five} load15=${fifteen} cores=${cores} normalized=${norm} severity=${sev}"
 }
 
+check_uptime() {
+    local seconds days hours boot sev
+
+    seconds=$(awk '{ print int($1) }' /proc/uptime)
+
+    days=$(( seconds / 86400 ))
+    hours=$(( (seconds % 86400) / 3600 ))
+
+    boot=$(uptime -s 2>/dev/null || \
+        date -d "-${seconds} seconds" '+%F %T')
+
+    sev=0
+
+    # A reboot within the last hour is worth flagging.
+    if (( seconds < 3600 )); then
+        sev=1
+    fi
+
+    escalate "$sev"
+
+    status \
+        "$sev" \
+        "Uptime" \
+        "${days}d ${hours}h" \
+        "booted ${boot}"
+
+    log INFO \
+        "uptime_seconds=${seconds} boot=${boot} severity=${sev}"
+}
+
+check_processes() {
+    section "TOP PROCESSES BY CPU"
+
+    printf ' %-8s %-22s %8s %8s %s\n' \
+        "PID" "COMMAND" "%CPU" "%MEM" "USER"
+
+    ps -eo pid,comm,pcpu,pmem,user --sort=-pcpu --no-headers |
+        head -n "$TOP_PROCESSES" |
+        while read -r pid comm pcpu pmem user; do
+            printf ' %-8s %-22s %8s %8s %s\n' \
+                "$pid" \
+                "${comm:0:22}" \
+                "$pcpu" \
+                "$pmem" \
+                "$user"
+        done
+
+    section "TOP PROCESSES BY MEMORY"
+
+    printf ' %-8s %-22s %8s %8s %8s\n' \
+        "PID" "COMMAND" "%MEM" "%CPU" "RSS_MB"
+
+    ps -eo pid,comm,pmem,pcpu,rss --sort=-rss --no-headers |
+        head -n "$TOP_PROCESSES" |
+        while read -r pid comm pmem pcpu rss; do
+            printf ' %-8s %-22s %8s %8s %8s\n' \
+                "$pid" \
+                "${comm:0:22}" \
+                "$pmem" \
+                "$pcpu" \
+                "$(( rss / 1024 ))"
+        done
+
+    local zombies
+
+    zombies=$(ps -eo stat --no-headers | grep -c '^Z' || true)
+
+    if (( zombies > 10 )); then
+        escalate 1
+
+        printf '\n'
+
+        status \
+            1 \
+            "Zombie processes" \
+            "$zombies" \
+            "parent process not reaping children"
+    fi
+
+    log INFO "zombie_processes=${zombies}"
+}
+
 
 
 # Load configuration if it exists.
@@ -413,10 +495,12 @@ main() {
     check_memory
     check_swap
     check_load
+    check_uptime
 
     section "STORAGE"
 
     check_disk
+    check_processes
 
     printf '\n'
 
