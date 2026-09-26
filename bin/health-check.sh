@@ -132,8 +132,8 @@ check_cpu() {
     local usage sev
 
     # First sample
-    read -r _ a <<< "$(grep '^cpu ' /proc/stat)"
-    read -ra f1 <<< "$a"
+    IFS=' ' read -r _ a <<< "$(grep '^cpu ' /proc/stat)"
+    IFS=' ' read -ra f1 <<< "$a"
 
     idle_a=$(( f1[3] + f1[4] ))
 
@@ -145,8 +145,8 @@ check_cpu() {
     sleep 1
 
     # Second sample
-    read -r _ b <<< "$(grep '^cpu ' /proc/stat)"
-    read -ra f2 <<< "$b"
+    IFS=' ' read -r _ b <<< "$(grep '^cpu ' /proc/stat)"
+    IFS=' ' read -ra f2 <<< "$b"
 
     idle_b=$(( f2[3] + f2[4] ))
 
@@ -265,6 +265,111 @@ check_swap() {
     log INFO "swap=${pct}% severity=${sev}"
 }
 
+check_disk() {
+
+    # Filesystem space
+    while IFS=' ' read -r _ _ _ avail pct mount; do
+        pct="${pct%\%}"
+
+        local sev=0
+
+        if (( pct >= DISK_CRIT )); then
+            sev=2
+        elif (( pct >= DISK_WARN )); then
+            sev=1
+        fi
+
+        escalate "$sev"
+
+        status \
+            "$sev" \
+            "Disk ${mount}" \
+            "${pct}%" \
+            "$(bar "$pct") ${avail} free"
+
+        log INFO \
+            "disk mount=${mount} used=${pct}% avail=${avail} severity=${sev}"
+    done < <(
+        df -PH \
+            -x tmpfs \
+            -x devtmpfs \
+            -x squashfs \
+            -x overlay \
+            2>/dev/null |
+        tail -n +2
+    )
+
+    # Inode usage
+    while IFS=' ' read -r _ _ _ ifree pct mount; do
+        pct="${pct%\%}"
+
+        [[ "$pct" == "-" ]] && continue
+
+        local sev=0
+
+        if (( pct >= INODE_CRIT )); then
+            sev=2
+        elif (( pct >= INODE_WARN )); then
+            sev=1
+        fi
+
+        escalate "$sev"
+
+        if (( sev > 0 )); then
+            status \
+                "$sev" \
+                "Inodes ${mount}" \
+                "${pct}%" \
+                "${ifree} free"
+        fi
+
+        log INFO \
+            "inodes mount=${mount} used=${pct}% severity=${sev}"
+    done < <(
+        df -PiH \
+            -x tmpfs \
+            -x devtmpfs \
+            -x squashfs \
+            -x overlay \
+            2>/dev/null |
+        tail -n +2
+    )
+}
+
+check_load() {
+    local one five fifteen cores norm sev
+
+    IFS=' ' read -r one five fifteen _ < /proc/loadavg
+
+    cores=$(nproc)
+
+    norm=$(awk \
+        -v l="$one" \
+        -v c="$cores" \
+        'BEGIN { printf "%.2f", l / c }')
+
+    sev=0
+
+    if ge "$norm" "$LOAD_CRIT"; then
+        sev=2
+    elif ge "$norm" "$LOAD_WARN"; then
+        sev=1
+    fi
+
+    escalate "$sev"
+
+    status \
+        "$sev" \
+        "Load / core" \
+        "$norm" \
+        "1m=${one} 5m=${five} 15m=${fifteen} cores=${cores}"
+
+    log INFO \
+        "load1=${one} load5=${five} load15=${fifteen} cores=${cores} normalized=${norm} severity=${sev}"
+}
+
+
+
 # Load configuration if it exists.
 if [[ -f "$CONFIG" ]]; then
     # shellcheck source=/dev/null
@@ -307,6 +412,11 @@ main() {
     check_cpu
     check_memory
     check_swap
+    check_load
+
+    section "STORAGE"
+
+    check_disk
 
     printf '\n'
 
