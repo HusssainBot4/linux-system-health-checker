@@ -185,6 +185,86 @@ check_cpu() {
     log INFO "cpu=${usage}% severity=${sev}"
 }
 
+check_memory() {
+    local total avail used pct sev
+
+    total=$(awk '/^MemTotal:/ { print $2 }' /proc/meminfo)
+    avail=$(awk '/^MemAvailable:/ { print $2 }' /proc/meminfo)
+
+    used=$(( total - avail ))
+
+    pct=$(awk \
+        -v u="$used" \
+        -v t="$total" \
+        'BEGIN { printf "%.1f", u * 100 / t }')
+
+    sev=0
+
+    if ge "$pct" "$MEM_CRIT"; then
+        sev=2
+    elif ge "$pct" "$MEM_WARN"; then
+        sev=1
+    fi
+
+    escalate "$sev"
+
+    local h_used h_total
+
+    h_used=$(awk \
+        -v k="$used" \
+        'BEGIN { printf "%.1fG", k / 1048576 }')
+
+    h_total=$(awk \
+        -v k="$total" \
+        'BEGIN { printf "%.1fG", k / 1048576 }')
+
+    status \
+        "$sev" \
+        "Memory used" \
+        "${pct}%" \
+        "$(bar "$pct") ${h_used} / ${h_total}"
+
+    log INFO \
+        "memory=${pct}% used=${h_used} total=${h_total} severity=${sev}"
+}
+
+check_swap() {
+    local total free_kb used pct sev
+
+    total=$(awk '/^SwapTotal:/ { print $2 }' /proc/meminfo)
+    free_kb=$(awk '/^SwapFree:/ { print $2 }' /proc/meminfo)
+
+    if (( total == 0 )); then
+        status 0 "Swap" "disabled" "no swap configured"
+        return 0
+    fi
+
+    used=$(( total - free_kb ))
+
+    pct=$(awk \
+        -v u="$used" \
+        -v t="$total" \
+        'BEGIN { printf "%.1f", u * 100 / t }')
+
+    sev=0
+
+    if ge "$pct" "$SWAP_CRIT"; then
+        sev=2
+    elif ge "$pct" "$SWAP_WARN"; then
+        sev=1
+    fi
+
+    escalate "$sev"
+
+    status \
+        "$sev" \
+        "Swap used" \
+        "${pct}%" \
+        "$(bar "$pct")"
+
+    log INFO "swap=${pct}% severity=${sev}"
+}
+
 # Load configuration if it exists.
 if [[ -f "$CONFIG" ]]; then
     # shellcheck source=/dev/null
@@ -225,6 +305,8 @@ main() {
     section "RESOURCE UTILISATION"
 
     check_cpu
+    check_memory
+    check_swap
 
     printf '\n'
 
