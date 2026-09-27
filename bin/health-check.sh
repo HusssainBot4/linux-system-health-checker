@@ -406,7 +406,7 @@ check_processes() {
 
     ps -eo pid,comm,pcpu,pmem,user --sort=-pcpu --no-headers |
         head -n "$TOP_PROCESSES" |
-        while read -r pid comm pcpu pmem user; do
+        while IFS=' ' read -r pid comm pcpu pmem user; do
             printf ' %-8s %-22s %8s %8s %s\n' \
                 "$pid" \
                 "${comm:0:22}" \
@@ -422,7 +422,7 @@ check_processes() {
 
     ps -eo pid,comm,pmem,pcpu,rss --sort=-rss --no-headers |
         head -n "$TOP_PROCESSES" |
-        while read -r pid comm pmem pcpu rss; do
+        while IFS=' ' read -r pid comm pmem pcpu rss; do
             printf ' %-8s %-22s %8s %8s %8s\n' \
                 "$pid" \
                 "${comm:0:22}" \
@@ -449,7 +449,6 @@ check_processes() {
 
     log INFO "zombie_processes=${zombies}"
 }
-
 
 
 # Load configuration if it exists.
