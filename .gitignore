@@ -1,13 +1,11 @@
 # Runtime data
-logs/
-reports/
-state/
+logs/*
+reports/*
+state/*
+backups/*
 
-# Temporary files
-*.tmp
-*.swp
-
-# Local/editor files
-.DS_Store
-.idea/
-.vscode/
+# Keep directory structure
+!logs/.gitkeep
+!reports/.gitkeep
+!state/.gitkeep
+!backups/.gitkeep
