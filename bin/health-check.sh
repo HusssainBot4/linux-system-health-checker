@@ -22,6 +22,30 @@ STAMP="$(date '+%Y-%m-%d %H:%M:%S')"
 # 2 = CRITICAL
 OVERALL=0
 
+REPORT_MODE=0
+
+case "${1:-}" in
+    "")
+        ;;
+    --report)
+        REPORT_MODE=1
+        ;;
+    --help|-h)
+        printf 'Usage: %s [--report]\n' "$0"
+        printf '\n'
+        printf 'Options:\n'
+        printf '  --report    Save the health report to the reports directory\n'
+        printf '  --help      Show this help message\n'
+        exit 0
+        ;;
+    *)
+        printf 'Unknown option: %s\n' "$1" >&2
+        printf 'Usage: %s [--report]\n' "$0" >&2
+        exit 3
+        ;;
+esac
+
+
 mkdir -p "${BASE_DIR}/logs" "${BASE_DIR}/reports"
 
 log() {
@@ -479,17 +503,13 @@ LOAD_CRIT="${LOAD_CRIT:-2.5}"
 TOP_PROCESSES="${TOP_PROCESSES:-5}"
 
 main() {
-    printf '\n%s================================================================%s\n' \
-        "$C_HEAD" "$C_RESET"
-
+    printf '\n'
+    printf '================================================================\n'
     printf ' DEVOPS SAINI | SYSTEM HEALTH CHECKER\n'
-    printf ' Host: %-24s Generated: %s\n' "$HOSTNAME_S" "$STAMP"
-
-    printf '%s================================================================%s\n' \
-        "$C_HEAD" "$C_RESET"
+    printf ' Host: %-28s Generated: %s\n' "$HOSTNAME_S" "$STAMP"
+    printf '================================================================\n'
 
     section "RESOURCE UTILISATION"
-
     check_cpu
     check_memory
     check_swap
@@ -497,15 +517,45 @@ main() {
     check_uptime
 
     section "STORAGE"
-
     check_disk
+
     check_processes
+
+    section "SUMMARY"
+
+    case "$OVERALL" in
+        0)
+            printf ' %sSystem healthy — no thresholds breached%s\n' \
+                "$C_OK" "$C_RESET"
+            ;;
+        1)
+            printf ' %sWarnings present — review the flagged items%s\n' \
+                "$C_WARN" "$C_RESET"
+            ;;
+        2)
+            printf ' %sCRITICAL — immediate attention required%s\n' \
+                "$C_CRIT" "$C_RESET"
+            ;;
+    esac
 
     printf '\n'
 
-    log INFO "health check CPU check completed"
+    log INFO "run complete overall_severity=${OVERALL}"
 
-    exit "$OVERALL"
+    return "$OVERALL"
 }
 
-main "$@"
+if (( REPORT_MODE == 1 )); then
+    REPORT_FILE="${REPORT_DIR}/health-$(date '+%F-%H%M%S').txt"
+
+    set +e
+    main > "$REPORT_FILE"
+    EXIT_CODE=$?
+    set -e
+
+    printf 'Report saved: %s\n' "$REPORT_FILE"
+    exit "$EXIT_CODE"
+else
+    main
+    exit $?
+fi
